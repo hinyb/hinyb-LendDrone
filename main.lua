@@ -138,7 +138,6 @@ gui.add_always_draw_imgui(function()
     if ImGui.IsKeyPressed(params['lend_drone_key'], false) then
         local player = Player.get_client()
         if Instance.exists(player) then
-            gm.instance_create_depth(player.x, player.y, 0, gm.constants.oDrone4Item)
             if get_select_player() ~= nil then
                 local mouse_x = math.floor(gm.variable_global_get("mouse_x"))
                 local mouse_y = math.floor(gm.variable_global_get("mouse_y"))
