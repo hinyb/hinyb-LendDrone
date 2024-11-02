@@ -1,6 +1,6 @@
 {
 	"name": "LendDrone",
-	"version_number": "1.0.2",
+	"version_number": "1.0.3",
 	"website_url": "https://github.com/hinyb/hinyb-LendDrone",
 	"description": "Lend Drone to your friend!",
 	"dependencies": [

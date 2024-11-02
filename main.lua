@@ -50,26 +50,34 @@ local function check_drone_status(drone_m_id, drone_id)
     end
     local num = 0
     for index, m_id in pairs(borrowed_drone_table[drone_id]) do
-        num = num + 1 
+        num = num + 1
         if m_id == drone_m_id then
             return index
         end
     end
     return nil
 end
-local lend_drone = function(drone, target)
-    table.insert(return_table,{object_index = drone.object_index, m_id = drone.m_id, origin_master = gm.variable_instance_get(drone.id, "master")})
-    gm.variable_instance_set(drone.id, "master", target)
+local lend_drone = function(drone, target, stop_record_flag)
+    if stop_record_flag ~= true then
+        table.insert(return_table, {
+            object_index = drone.object_index,
+            m_id = drone.m_id,
+            origin_master = gm.variable_instance_get(drone.id, "master")
+        })
+    end
+    gm.variable_instance_set(drone.id, "master", target.id) -- May break some mod, but i can't find a better way to deal with it. I think there maybe some closure issue here, but I'm not a Lua expert.
 end
-local lend_drone_handler = function(drone_m_id, target_m_id, drone_id)
-    local status = check_drone_status(drone_m_id, drone_id)
-    if status then
-        table.remove(borrowed_drone_table[drone_id], status)
-    else
-        table.insert(borrowed_drone_table[drone_id], drone_m_id)
+local lend_drone_handler = function(drone_m_id, target_m_id, drone_id, stop_record_flag)
+    if stop_record_flag ~= true then
+        local status = check_drone_status(drone_m_id, drone_id)
+        if status then
+            table.remove(borrowed_drone_table[drone_id], status)
+        else
+            table.insert(borrowed_drone_table[drone_id], drone_m_id)
+        end
     end
     lend_drone(get_instance_with_m_id(drone_id, drone_m_id).value,
-        get_instance_with_m_id(gm.constants.oP, target_m_id).value)
+        get_instance_with_m_id(gm.constants.oP, target_m_id).value, stop_record_flag)
 end
 local function sync_drone_lend_handler(cost, delay)
     params['delay'] = delay
@@ -92,7 +100,7 @@ gm.pre_code_execute("gml_Object_pDrone_CleanUp_0", function(self, other)
     for _, drone in pairs(return_table) do
         if self.object_index == drone.object_index then
             if self.m_id == drone.m_id then
-                gm.variable_instance_set(self.id, "master", drone.origin_master)
+                gm.variable_instance_set(self.id, "master", drone.origin_master.id)
                 drone.stop()
             end
         end
@@ -143,25 +151,30 @@ gui.add_always_draw_imgui(function()
                 local mouse_y = math.floor(gm.variable_global_get("mouse_y"))
                 local drone = gm.instance_nearest(mouse_x, mouse_y, EVariableType.ALL)
                 local drone_master = gm.variable_instance_get(drone.id, "master")
+                log.info("drone_master.." .. type(drone_master))
                 if (drone_master ~= nil) then
                     if check_drone_status(drone.m_id, drone.object_index) == nil then
-                        if gm.variable_instance_get(drone_master.id, "m_id") == player.value.m_id then
-                            lend_drone(drone, get_select_player())
+                        if gm.variable_instance_get(type(drone_master) == "number" and drone_master or drone_master.id,
+                            "m_id") == player.value.m_id then
+                            local isSniperDrone = drone.object_index == gm.constants.oSniperDrone
+                            lend_drone(drone, get_select_player(), isSniperDrone)
                             Net.send("lend_drone_handler", Net.TARGET.all, nil, drone.m_id, get_select_player().m_id,
-                                drone.object_index)
-                            lend_drone_table[drone.id] = {
-                                object_index = drone.object_index,
-                                m_id = drone.m_id,
-                                origin_master = player.value,
-                                stop = create_lend(params['cost'], params['delay'], function()
-                                    lend_drone(drone, player.value)
-                                    Net.send("lend_drone_handler", Net.TARGET.all, nil, drone.m_id, player.value.m_id,
-                                        drone.object_index)
-                                    lend_drone_table[drone.id] = nil
-                                end, function()
-                                    return false
-                                end)
-                            }
+                                drone.object_index, isSniperDrone)
+                            if not isSniperDrone then
+                                lend_drone_table[drone.id] = {
+                                    object_index = drone.object_index,
+                                    m_id = drone.m_id,
+                                    origin_master = player.value,
+                                    stop = create_lend(params['cost'], params['delay'], function()
+                                        lend_drone(drone, player.value)
+                                        Net.send("lend_drone_handler", Net.TARGET.all, nil, drone.m_id,
+                                            player.value.m_id, drone.object_index)
+                                        lend_drone_table[drone.id] = nil
+                                    end, function()
+                                        return false
+                                    end)
+                                }
+                            end
                         end
                     end
                 end
