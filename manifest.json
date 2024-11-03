@@ -4,9 +4,9 @@
 	"website_url": "https://github.com/hinyb/hinyb-LendDrone",
 	"description": "Lend Drone to your friend!",
 	"dependencies": [
-		"ReturnOfModding-ReturnOfModding-1.0.40",
-		"RoRRModdingToolkit-RoRR_Modding_Toolkit-1.1.13",
+		"ReturnOfModding-ReturnOfModding-1.0.48",
+		"RoRRModdingToolkit-RoRR_Modding_Toolkit-1.1.25",
 		"SmoothSpatula-TomlHelper-1.0.1",
-		"hinyb-MPSelector-1.0.0"
+		"hinyb-MPSelector-1.0.1"
 	]
 }

@@ -1,5 +1,6 @@
 v1.0.3
 * Fix the compatibility issue of SniperDrone. But may break the other drone mods. 
+* Update to new network api.
 
 v1.0.2
 * Delete the test funciton that I forgot.

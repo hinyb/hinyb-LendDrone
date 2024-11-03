@@ -1,14 +1,4 @@
-mods.on_all_mods_loaded(function()
-    for _, m in pairs(mods) do
-        if type(m) == "table" and m.RoRR_Modding_Toolkit then
-            for _, c in ipairs(m.Classes) do
-                if m[c] then
-                    _G[c] = m[c]
-                end
-            end
-        end
-    end
-end)
+mods["RoRRModdingToolkit-RoRR_Modding_Toolkit"].auto()
 
 mods.on_all_mods_loaded(function()
     for k, v in pairs(mods) do
@@ -35,60 +25,29 @@ end)
 
 local lend_drone_table = {}
 local borrowed_drone_table = {}
-local return_table = {}
-local function get_instance_with_m_id(id, m_id)
-    for k, v in pairs(Instance.find_all(id)) do
-        if v.value.m_id == m_id then
-            return v
-        end
-    end
+local lend_drone_send, sync_drone_lend_data_send
+local lend_drone = function(drone, target)
+    drone.master = target.id -- May break some mod, but i can't find a better way to deal with it. I think there maybe some closure issue here, but I'm not a Lua expert.
 end
-
-local function check_drone_status(drone_m_id, drone_id)
-    if borrowed_drone_table[drone_id] == nil then
-        borrowed_drone_table[drone_id] = {}
-    end
-    local num = 0
-    for index, m_id in pairs(borrowed_drone_table[drone_id]) do
-        num = num + 1
-        if m_id == drone_m_id then
-            return index
-        end
-    end
-    return nil
-end
-local lend_drone = function(drone, target, stop_record_flag)
-    if stop_record_flag ~= true then
-        table.insert(return_table, {
-            object_index = drone.object_index,
-            m_id = drone.m_id,
-            origin_master = gm.variable_instance_get(drone.id, "master")
-        })
-    end
-    gm.variable_instance_set(drone.id, "master", target.id) -- May break some mod, but i can't find a better way to deal with it. I think there maybe some closure issue here, but I'm not a Lua expert.
-end
-local lend_drone_handler = function(drone_m_id, target_m_id, drone_id, stop_record_flag)
-    if stop_record_flag ~= true then
-        local status = check_drone_status(drone_m_id, drone_id)
-        if status then
-            table.remove(borrowed_drone_table[drone_id], status)
+local lend_drone_handler = function(drone, target)
+    if drone.object_index ~= gm.constants.oSniperDrone then
+        if borrowed_drone_table[drone.id] then
+            borrowed_drone_table[drone.id] = nil
         else
-            table.insert(borrowed_drone_table[drone_id], drone_m_id)
+            borrowed_drone_table[drone.id] = true
         end
     end
-    lend_drone(get_instance_with_m_id(drone_id, drone_m_id).value,
-        get_instance_with_m_id(gm.constants.oP, target_m_id).value, stop_record_flag)
+    lend_drone(drone, target)
 end
 local function sync_drone_lend_handler(cost, delay)
     params['delay'] = delay
     params['cost'] = cost
     Toml.save_cfg(_ENV["!guid"], params)
 end
-
 gm.post_script_hook(gm.constants.run_create, function(self, other, result, args)
     borrowed_drone_table = {}
-    if gm.variable_global_get("host") == true then
-        Net.send("sync_drone_lend_handler", Net.TARGET.all, nil, params['cost'], params['delay'])
+    if Net.get_type() == Net.TYPE.host then
+        sync_drone_lend_data_send(params['cost'], params['delay'])
     end
 end)
 gm.post_script_hook(gm.constants.run_destroy, function(self, other, result, args)
@@ -97,13 +56,8 @@ gm.post_script_hook(gm.constants.run_destroy, function(self, other, result, args
     end
 end)
 gm.pre_code_execute("gml_Object_pDrone_CleanUp_0", function(self, other)
-    for _, drone in pairs(return_table) do
-        if self.object_index == drone.object_index then
-            if self.m_id == drone.m_id then
-                gm.variable_instance_set(self.id, "master", drone.origin_master.id)
-                drone.stop()
-            end
-        end
+    if lend_drone_table[self.id] then
+        lend_drone_table[self.id].stop()
     end
 end)
 local function create_lend(cost, delay, onStop, onEmpty, costFunc)
@@ -140,35 +94,62 @@ local function create_lend(cost, delay, onStop, onEmpty, costFunc)
     pay_lend()
     return stop_lend
 end
+
+local function init()
+    local lend_drone_packet = Packet.new()
+    lend_drone_packet:onReceived(function(message, player)
+        local drone = message:read_instance().value
+        local target = message:read_instance().value
+        lend_drone_handler(drone, target)
+        if Net.get_type() == Net.TYPE.host then
+            local sync_message = lend_drone_packet:message_begin()
+            sync_message:write_instance(drone)
+            sync_message:write_instance(target)
+            sync_message:send_exclude(player)
+        end
+    end)
+    lend_drone_send = function(drone, target)
+        local sync_message = lend_drone_packet:message_begin()
+        sync_message:write_instance(drone)
+        sync_message:write_instance(target)
+        if Net.get_type() == Net.TYPE.host then
+            sync_message:send_to_all()
+        else
+            sync_message:send_to_host()
+        end
+    end
+
+    local sync_drone_lend_data_packet = Packet.new()
+    sync_drone_lend_data_packet:onReceived(function(message, player)
+        local cost = message:read_int()
+        local delay = message:read_int()
+        sync_drone_lend_handler(cost, delay)
+    end)
+    sync_drone_lend_data_send = function(cost, delay)
+        local sync_message = sync_drone_lend_data_packet:message_begin()
+        sync_message:write_int(cost)
+        sync_message:write_int(delay)
+        sync_message:send_to_all()
+    end
+end
 gui.add_always_draw_imgui(function()
-    Net.register("lend_drone_handler", lend_drone_handler)
-    Net.register("sync_drone_lend_handler", sync_drone_lend_handler)
     if ImGui.IsKeyPressed(params['lend_drone_key'], false) then
-        local player = Player.get_client()
+        local player = Player.get_client().value
         if Instance.exists(player) then
             if get_select_player() ~= nil then
                 local mouse_x = math.floor(gm.variable_global_get("mouse_x"))
                 local mouse_y = math.floor(gm.variable_global_get("mouse_y"))
                 local drone = gm.instance_nearest(mouse_x, mouse_y, EVariableType.ALL)
-                local drone_master = gm.variable_instance_get(drone.id, "master")
-                log.info("drone_master.." .. type(drone_master))
-                if (drone_master ~= nil) then
-                    if check_drone_status(drone.m_id, drone.object_index) == nil then
-                        if gm.variable_instance_get(type(drone_master) == "number" and drone_master or drone_master.id,
-                            "m_id") == player.value.m_id then
-                            local isSniperDrone = drone.object_index == gm.constants.oSniperDrone
-                            lend_drone(drone, get_select_player(), isSniperDrone)
-                            Net.send("lend_drone_handler", Net.TARGET.all, nil, drone.m_id, get_select_player().m_id,
-                                drone.object_index, isSniperDrone)
-                            if not isSniperDrone then
+                if (drone.master ~= nil) then
+                    if borrowed_drone_table[drone.id] ~= true then
+                        if type(drone.master) == "number" and drone.master or drone.master.m_id == player.m_id then
+                            lend_drone(drone, get_select_player())
+                            lend_drone_send(drone, get_select_player())
+                            if drone.object_index ~= gm.constants.oSniperDrone then
                                 lend_drone_table[drone.id] = {
-                                    object_index = drone.object_index,
-                                    m_id = drone.m_id,
-                                    origin_master = player.value,
                                     stop = create_lend(params['cost'], params['delay'], function()
-                                        lend_drone(drone, player.value)
-                                        Net.send("lend_drone_handler", Net.TARGET.all, nil, drone.m_id,
-                                            player.value.m_id, drone.object_index)
+                                        lend_drone(drone, player)
+                                        lend_drone_send(drone, player)
                                         lend_drone_table[drone.id] = nil
                                     end, function()
                                         return false
@@ -218,3 +199,5 @@ gui.add_to_menu_bar(function()
         Toml.save_cfg(_ENV["!guid"], params)
     end
 end)
+
+Initialize(init)
