@@ -1,3 +1,7 @@
+v1.0.4
+* Delete the support for the SniperDrone.
+* Update to RMT 1.2.0.
+
 v1.0.3
 * Fix the compatibility issue of SniperDrone. But may break the other drone mods. 
 * Update to new network api.

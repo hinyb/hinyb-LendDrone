@@ -1,4 +1,4 @@
-mods["RoRRModdingToolkit-RoRR_Modding_Toolkit"].auto()
+mods["RoRRModdingToolkit-RoRR_Modding_Toolkit"].auto(true)
 
 mods.on_all_mods_loaded(function()
     for k, v in pairs(mods) do
@@ -27,15 +27,13 @@ local lend_drone_table = {}
 local borrowed_drone_table = {}
 local lend_drone_send, sync_drone_lend_data_send
 local lend_drone = function(drone, target)
-    drone.master = target.id -- May break some mod, but i can't find a better way to deal with it. I think there maybe some closure issue here, but I'm not a Lua expert.
+    drone.master = target
 end
 local lend_drone_handler = function(drone, target)
-    if drone.object_index ~= gm.constants.oSniperDrone then
-        if borrowed_drone_table[drone.id] then
-            borrowed_drone_table[drone.id] = nil
-        else
-            borrowed_drone_table[drone.id] = true
-        end
+    if borrowed_drone_table[drone.id] then
+        borrowed_drone_table[drone.id] = nil
+    else
+        borrowed_drone_table[drone.id] = true
     end
     lend_drone(drone, target)
 end
@@ -46,6 +44,7 @@ local function sync_drone_lend_handler(cost, delay)
 end
 gm.post_script_hook(gm.constants.run_create, function(self, other, result, args)
     borrowed_drone_table = {}
+    lend_drone_table = {}
     if Net.get_type() == Net.TYPE.host then
         sync_drone_lend_data_send(params['cost'], params['delay'])
     end
@@ -140,7 +139,7 @@ gui.add_always_draw_imgui(function()
                 local mouse_x = math.floor(gm.variable_global_get("mouse_x"))
                 local mouse_y = math.floor(gm.variable_global_get("mouse_y"))
                 local drone = gm.instance_nearest(mouse_x, mouse_y, EVariableType.ALL)
-                if (drone.master ~= nil) then
+                if drone.object_index ~= gm.constants.oSniperDrone and drone.master ~= nil then
                     if borrowed_drone_table[drone.id] ~= true then
                         if type(drone.master) == "number" and drone.master or drone.master.m_id == player.m_id then
                             lend_drone(drone, get_select_player())

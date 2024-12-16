@@ -1,7 +1,5 @@
 # hinyb-LendDrone
 * This is a small mod that adds the ability to lend your drone to your friend. It cost gold when lend(Configurable).
-* Now it should work with sniper's skill. But the solution may break the other drone mods.
-* If you have a better way to deal with this problem, please tell me.
 
 ## How to use
 1. Place your mouse on the drone you want to lend.
